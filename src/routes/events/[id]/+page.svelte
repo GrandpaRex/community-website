@@ -279,10 +279,10 @@
 											<div class="flex items-center justify-between rounded-lg bg-slate-700/30 p-4">
 												<div class="flex-1">
 													<div class="font-semibold text-white">
-														{getPositionInfo(position.position).radioName}
+														{getPositionInfo(position.position)?.radioName || position.position}
 													</div>
 													<div class="text-sm text-slate-400">
-														{getPositionInfo(position.position).name}
+														{getPositionInfo(position.position)?.name || 'Position'}
 													</div>
 												</div>
 
@@ -393,12 +393,12 @@
 								</div>
 								<div class="divide-y divide-slate-700/60">
 									{#each event.positionRequests as request}
-										<div class="px-6 py-4 transition-colors hover:bg-slate-700/30">
-											<div class="flex items-start justify-between">
-												<div>
-													<div class="font-medium text-white">
-														{getUserDisplayName(request.user)} ({request.user.operatingInitials})
-													</div>
+       			<div class="px-6 py-4 transition-colors hover:bg-slate-700/30">
+       				<div class="flex items-start justify-between">
+       					<div>
+       						<div class="font-medium text-white">
+       							{getUserDisplayName(request.user)} ({request.user.operatingInitials || '??'})
+       						</div>
 													<div class="mt-1 text-sm text-slate-400">
 														{request.comments || 'No comments provided'}
 													</div>

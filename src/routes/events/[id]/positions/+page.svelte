@@ -299,7 +299,7 @@
 						<div class="flex items-start justify-between">
 							<div>
 								<div class="font-medium text-white">
-									{getUserDisplayName(request.user)} ({request.user?.operatingInitials})
+									{getUserDisplayName(request.user)} ({request.user?.operatingInitials || '??'})
 								</div>
 								<div class="mt-1 text-sm text-slate-400">
 									{request.comments || 'No comments provided'}

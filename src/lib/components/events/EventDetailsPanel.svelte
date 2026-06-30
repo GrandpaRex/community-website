@@ -9,19 +9,33 @@
 	import RosterTypeBadge from './RosterTypeBadge.svelte';
 	import EventTypeBadge from './EventTypeBadge.svelte';
 	import { supportsRosters } from '$lib/config/events';
+	import { getGoogleCalendarUrl } from '$lib/utils/events';
+	import IconCalendarPlus from '~icons/mdi/calendar-plus';
 
-	let { event }: { event: Event } = $props();
+	export let event: Event;
 </script>
 
 <Panel title="Event Information" icon={IconInformation} mode="dark">
 	<div class="p-6">
-		<div class="space-y-4">
-			<!-- Badges -->
-			<div class="flex items-center gap-2">
-				<EventTypeBadge eventType={event.type} />
-				{#if supportsRosters(event.type)}
-					<RosterTypeBadge rosterType={event.rosterType} />
-				{/if}
+		<div class="space-y-6">
+			<!-- Badges & Action -->
+			<div class="flex flex-wrap items-center justify-between gap-4">
+				<div class="flex items-center gap-2">
+					<EventTypeBadge eventType={event.type} />
+					{#if supportsRosters(event.type)}
+						<RosterTypeBadge rosterType={event.rosterType} />
+					{/if}
+				</div>
+
+				<a
+					href={getGoogleCalendarUrl(event)}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-xs font-medium text-slate-300 transition-all hover:border-sky-500/30 hover:bg-slate-700 hover:text-sky-300"
+				>
+					<IconCalendarPlus class="h-3.5 w-3.5" />
+					Add to Google Calendar
+				</a>
 			</div>
 
 			<!-- Event Times -->
