@@ -15,6 +15,11 @@
 	const selectClass =
 		'min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none';
 
+	function teamMembers(team: { sections: { members: { cid: string; name: string }[] }[] }) {
+		const members = team.sections.flatMap((section) => section.members);
+		return members.filter((m, i) => members.findIndex((other) => other.cid === m.cid) === i);
+	}
+
 	function notIn(members: { cid: string }[]) {
 		return (controller: { cid: string }) => !members.some((m) => m.cid === controller.cid);
 	}
@@ -238,12 +243,12 @@
 							{#if position.manualOnly && team}
 								<option value="">Set lead…</option>
 								<optgroup label={team.name}>
-									{#each team.members as member (member.cid)}
+									{#each teamMembers(team) as member (member.cid)}
 										<option value={member.cid}>{member.name} ({member.cid})</option>
 									{/each}
 								</optgroup>
 								<optgroup label="All controllers">
-									{#each available.filter(notIn(team.members)) as controller (controller.cid)}
+									{#each available.filter(notIn(teamMembers(team))) as controller (controller.cid)}
 										<option value={controller.cid}>{controller.name} ({controller.cid})</option>
 									{/each}
 								</optgroup>
@@ -279,7 +284,7 @@
 </div>
 
 <h2 class="mt-10 mb-4 text-2xl font-bold text-white">Teams</h2>
-<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 	{#each data.teams as team (team.key)}
 		<div class="rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm backdrop-blur-sm">
 			<div class="border-b border-slate-700/60 px-4 py-3">
@@ -291,40 +296,47 @@
 				{/if}
 				{@render emailLinks(team.emails)}
 			</div>
-			<div class="space-y-3 px-4 py-4">
-				{#each team.members as member (member.cid)}
-					<div class="flex items-center gap-2">
-						{@render memberRow(member)}
-						{#if editing}
-							{@render removeButton(
-								'?/removeTeamMember',
-								{ team: team.key, cid: member.cid },
-								member.name
-							)}
-						{/if}
-					</div>
-				{:else}
-					<p class="text-sm text-gray-500 italic">No team members</p>
-				{/each}
-			</div>
-			{#if editing}
-				<form
-					method="POST"
-					action="?/addTeamMember"
-					use:enhance
-					class="flex gap-2 border-t border-slate-700/60 px-4 py-3"
-				>
-					<input type="hidden" name="team" value={team.key} />
-					<label for="add-team-{team.key}" class="sr-only">Add to {team.name}</label>
-					<select id="add-team-{team.key}" name="cid" required class={selectClass}>
-						<option value="">Add team member…</option>
-						{#each data.controllers.filter(notIn( [...team.members, ...team.leads] )) as controller (controller.cid)}
-							<option value={controller.cid}>{controller.name} ({controller.cid})</option>
+			{#each team.sections as section (section.key)}
+				{@const label = section.name ?? team.name}
+				<div class="border-b border-slate-700/60 px-4 py-4 last:border-b-0">
+					{#if section.name}
+						<h4 class="mb-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+							{section.name}
+						</h4>
+					{/if}
+					<div class="space-y-3">
+						{#each section.members as member (member.cid)}
+							<div class="flex items-center gap-2">
+								{@render memberRow(member)}
+								{#if editing}
+									{@render removeButton(
+										'?/removeTeamMember',
+										{ team: section.key, cid: member.cid },
+										member.name
+									)}
+								{/if}
+							</div>
+						{:else}
+							<p class="text-sm text-gray-500 italic">
+								No {section.name?.toLowerCase() ?? 'team members'}
+							</p>
 						{/each}
-					</select>
-					{@render addButton(`Add to ${team.name}`)}
-				</form>
-			{/if}
+					</div>
+					{#if editing}
+						<form method="POST" action="?/addTeamMember" use:enhance class="mt-3 flex gap-2">
+							<input type="hidden" name="team" value={section.key} />
+							<label for="add-team-{section.key}" class="sr-only">Add to {label}</label>
+							<select id="add-team-{section.key}" name="cid" required class={selectClass}>
+								<option value="">Add controller…</option>
+								{#each data.controllers.filter(notIn( [...section.members, ...team.leads] )) as controller (controller.cid)}
+									<option value={controller.cid}>{controller.name} ({controller.cid})</option>
+								{/each}
+							</select>
+							{@render addButton(`Add to ${label}`)}
+						</form>
+					{/if}
+				</div>
+			{/each}
 			{@render emailForm(team.key, team.name, team.emails)}
 		</div>
 	{/each}

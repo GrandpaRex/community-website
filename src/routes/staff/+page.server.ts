@@ -2,7 +2,12 @@ import { fail } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { FACILITY_ID } from '$lib/config';
-import { STAFF_POSITIONS, STAFF_TEAMS, isManualOnlyPosition } from '$lib/config/staff';
+import {
+	STAFF_POSITIONS,
+	STAFF_TEAMS,
+	STAFF_TEAM_SECTIONS,
+	isManualOnlyPosition
+} from '$lib/config/staff';
 import {
 	staffAssignmentsTable,
 	staffBiosTable,
@@ -15,6 +20,7 @@ import { isAdmin } from '$lib/utils/permissions';
 
 const POSITION_KEYS = STAFF_POSITIONS.map((position) => position.key) as [string, ...string[]];
 const TEAM_KEYS = STAFF_TEAMS.map((team) => team.key) as [string, ...string[]];
+const SECTION_KEYS = STAFF_TEAM_SECTIONS.map((section) => section.key) as [string, ...string[]];
 const CARD_KEYS = [...POSITION_KEYS, ...TEAM_KEYS] as [string, ...string[]];
 const MAX_BIO_LENGTH = 1000;
 
@@ -101,20 +107,24 @@ export const load = async ({ locals }) => {
 	}));
 
 	const teams = STAFF_TEAMS.map((team) => {
-		const rows = teamRows.filter((row) => row.team === team.key);
 		const leads = getPositionHolders(team.lead);
-		const cids = new Set([
-			...(team.vatusaRole ? getVatusaHolders(roster, team.vatusaRole) : []),
-			...rows.filter((row) => !row.excluded).map((row) => row.cid)
-		]);
-		for (const row of rows) if (row.excluded) cids.delete(row.cid);
-		for (const cid of leads) cids.delete(cid);
 
 		return {
 			...team,
 			emails: getEmails(team.key),
 			leads: leads.map(describe).sort(byName),
-			members: [...cids].map(describe).sort(byName)
+			sections: team.sections.map((section) => {
+				// Manual membership changes are stored under the section key
+				const rows = teamRows.filter((row) => row.team === section.key);
+				const cids = new Set([
+					...(section.vatusaRole ? getVatusaHolders(roster, section.vatusaRole) : []),
+					...rows.filter((row) => !row.excluded).map((row) => row.cid)
+				]);
+				for (const row of rows) if (row.excluded) cids.delete(row.cid);
+				for (const cid of leads) cids.delete(cid);
+
+				return { ...section, members: [...cids].map(describe).sort(byName) };
+			})
 		};
 	});
 
@@ -140,7 +150,7 @@ const positionSchema = z.object({
 });
 
 const teamMemberSchema = z.object({
-	team: z.enum(TEAM_KEYS),
+	team: z.enum(SECTION_KEYS),
 	cid: cidSchema
 });
 
