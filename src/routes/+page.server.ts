@@ -2,7 +2,7 @@ import { eventsTable } from '$lib/db/schema/events';
 import { feedbackTable } from '$lib/db/schema/feedback';
 import { fetchMetars } from '$lib/server/vatsim/vatsimDataClient';
 import { fetchControllers } from '$lib/server/vatsim/vnasDataClient.js';
-import { asc, and, desc, eq, gt, inArray } from 'drizzle-orm';
+import { asc, and, desc, eq, gt, inArray, notInArray } from 'drizzle-orm';
 
 export const load = async ({ locals }) => {
 	const metars = await fetchMetars();
@@ -24,7 +24,9 @@ export const load = async ({ locals }) => {
 		orderBy: desc(feedbackTable.updatedAt),
 		where: and(
 			eq(feedbackTable.status, 'approved'),
-			inArray(feedbackTable.rating, ['good', 'excellent'])
+			// Exclude negative ratings rather than listing positive ones, so new positive
+			// ratings (e.g. very_good) show up automatically
+			notInArray(feedbackTable.rating, ['poor', 'fair'])
 		),
 		with: {
 			controller: {

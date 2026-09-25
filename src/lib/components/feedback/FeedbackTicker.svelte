@@ -38,7 +38,7 @@
 				{#if item.feedback?.trim()}
 					<span class="text-slate-300 italic">“{truncate(item.feedback)}”</span>
 				{:else}
-					<span class="text-slate-300 capitalize">{item.rating} service</span>
+					<span class="text-slate-300 capitalize">{item.rating.replaceAll('_', ' ')} service</span>
 				{/if}
 			</li>
 		{/each}
