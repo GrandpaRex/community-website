@@ -7,11 +7,29 @@
 	let { data } = $props();
 
 	let editing = $state(false);
+
+	const teams = $derived(data.staff.filter((position) => position.team));
 </script>
 
 <svelte:head>
 	<title>Indy Center | Staff</title>
 </svelte:head>
+
+{#snippet memberRow(member: {
+	name: string;
+	operatingInitials: string | null;
+	rating: string | null;
+})}
+	<span class="font-semibold text-white">{member.name}</span>
+	{#if member.operatingInitials}
+		<span class="rounded bg-indigo-600/80 px-2 py-0.5 font-mono text-xs font-semibold text-white">
+			{member.operatingInitials}
+		</span>
+	{/if}
+	{#if member.rating}
+		<span class="text-sm text-gray-400">{member.rating}</span>
+	{/if}
+{/snippet}
 
 <div class="mb-8 flex items-start justify-between gap-3">
 	<div>
@@ -35,7 +53,8 @@
 {#if editing}
 	<p class="mb-4 text-sm text-gray-400">
 		Positions follow VATUSA facility roles until edited here. Editing a position replaces its VATUSA
-		holders; reset it to follow VATUSA again.
+		holders; reset it to follow VATUSA again. Team leads are always set here, and a lead is left off
+		their team list.
 	</p>
 {/if}
 
@@ -51,17 +70,7 @@
 			<div class="space-y-3 px-4 py-4">
 				{#each position.members as member (member.cid)}
 					<div class="flex items-center gap-2">
-						<span class="font-semibold text-white">{member.name}</span>
-						{#if member.operatingInitials}
-							<span
-								class="rounded bg-indigo-600/80 px-2 py-0.5 font-mono text-xs font-semibold text-white"
-							>
-								{member.operatingInitials}
-							</span>
-						{/if}
-						{#if member.rating}
-							<span class="text-sm text-gray-400">{member.rating}</span>
-						{/if}
+						{@render memberRow(member)}
 						{#if editing}
 							<form method="POST" action="?/remove" use:enhance class="ml-auto">
 								<input type="hidden" name="position" value={position.key} />
@@ -81,6 +90,9 @@
 				{/each}
 			</div>
 			{#if editing}
+				{@const available = data.controllers.filter(
+					(c) => !position.members.some((m) => m.cid === c.cid)
+				)}
 				<div class="space-y-2 border-t border-slate-700/60 px-4 py-3">
 					<form method="POST" action="?/add" use:enhance class="flex gap-2">
 						<input type="hidden" name="position" value={position.key} />
@@ -91,10 +103,24 @@
 							required
 							class="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none"
 						>
-							<option value="">Add controller…</option>
-							{#each data.controllers.filter((c) => !position.members.some((m) => m.cid === c.cid)) as controller (controller.cid)}
-								<option value={controller.cid}>{controller.name} ({controller.cid})</option>
-							{/each}
+							{#if position.team}
+								<option value="">Set lead…</option>
+								<optgroup label={position.team}>
+									{#each position.teamMembers as member (member.cid)}
+										<option value={member.cid}>{member.name} ({member.cid})</option>
+									{/each}
+								</optgroup>
+								<optgroup label="All controllers">
+									{#each available.filter((c) => !position.teamMembers.some((m) => m.cid === c.cid)) as controller (controller.cid)}
+										<option value={controller.cid}>{controller.name} ({controller.cid})</option>
+									{/each}
+								</optgroup>
+							{:else}
+								<option value="">Add controller…</option>
+								{#each available as controller (controller.cid)}
+									<option value={controller.cid}>{controller.name} ({controller.cid})</option>
+								{/each}
+							{/if}
 						</select>
 						<button
 							type="submit"
@@ -104,21 +130,50 @@
 							<IconPlus class="h-4 w-4" />
 						</button>
 					</form>
-					<div class="flex items-center justify-between text-xs">
-						<span class="text-gray-500">
-							{position.isManual ? 'Manually set' : 'From VATUSA roles'}
-						</span>
-						{#if position.isManual}
-							<form method="POST" action="?/reset" use:enhance>
-								<input type="hidden" name="position" value={position.key} />
-								<button type="submit" class="font-medium text-sky-400 hover:text-sky-300">
-									Reset to VATUSA
-								</button>
-							</form>
-						{/if}
-					</div>
+					{#if !position.team}
+						<div class="flex items-center justify-between text-xs">
+							<span class="text-gray-500">
+								{position.isManual ? 'Manually set' : 'From VATUSA roles'}
+							</span>
+							{#if position.isManual}
+								<form method="POST" action="?/reset" use:enhance>
+									<input type="hidden" name="position" value={position.key} />
+									<button type="submit" class="font-medium text-sky-400 hover:text-sky-300">
+										Reset to VATUSA
+									</button>
+								</form>
+							{/if}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
 	{/each}
 </div>
+
+{#if teams.length > 0}
+	<h2 class="mt-10 mb-4 text-2xl font-bold text-white">Teams</h2>
+	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+		{#each teams as position (position.key)}
+			<div class="rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm backdrop-blur-sm">
+				<div class="border-b border-slate-700/60 px-4 py-3">
+					<h3 class="text-sm font-semibold tracking-wide text-white uppercase">{position.team}</h3>
+					{#if position.members.length > 0}
+						<p class="mt-1 text-xs text-gray-400">
+							Led by {position.members.map((m) => m.name).join(', ')}
+						</p>
+					{/if}
+				</div>
+				<div class="grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-2">
+					{#each position.teamMembers as member (member.cid)}
+						<div class="flex items-center gap-2">
+							{@render memberRow(member)}
+						</div>
+					{:else}
+						<p class="text-sm text-gray-500 italic">No team members</p>
+					{/each}
+				</div>
+			</div>
+		{/each}
+	</div>
+{/if}

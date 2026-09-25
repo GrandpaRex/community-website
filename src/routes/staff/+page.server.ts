@@ -10,6 +10,10 @@ import { isAdmin } from '$lib/utils/permissions';
 
 const POSITION_KEYS = STAFF_POSITIONS.map((position) => position.key) as [string, ...string[]];
 
+function hasTeam(position: string) {
+	return STAFF_POSITIONS.some((p) => p.key === position && p.team);
+}
+
 type RosterMember = Awaited<ReturnType<typeof getRoster>>[number];
 
 function getRoster(db: Database) {
@@ -70,13 +74,28 @@ export const load = async ({ locals }) => {
 
 	const staff = STAFF_POSITIONS.map((position) => {
 		const manual = assignments.filter((a) => a.position === position.key).map((a) => a.cid);
-		const isManual = manual.length > 0;
-		const cids = isManual ? manual : getVatusaHolders(roster, position.key);
+		const vatusaHolders = getVatusaHolders(roster, position.key);
+		const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
+		if (hasTeam(position.key)) {
+			// Leads are only ever set manually; every other role holder is on the team
+			return {
+				...position,
+				isManual: true,
+				members: manual.map(describe).sort(byName),
+				teamMembers: vatusaHolders
+					.filter((cid) => !manual.includes(cid))
+					.map(describe)
+					.sort(byName)
+			};
+		}
+
+		const isManual = manual.length > 0;
 		return {
 			...position,
 			isManual,
-			members: cids.map(describe).sort((a, b) => a.name.localeCompare(b.name))
+			members: (isManual ? manual : vatusaHolders).map(describe).sort(byName),
+			teamMembers: []
 		};
 	});
 
@@ -100,8 +119,11 @@ const positionSchema = z.object({
 	position: z.enum(POSITION_KEYS)
 });
 
-// The first manual edit to a position starts from what VATUSA currently shows
+// The first manual edit to a position starts from what VATUSA currently shows.
+// Team positions don't need this, since their leads are always set manually.
 async function seedFromVatusa(db: Database, position: string) {
+	if (hasTeam(position)) return;
+
 	const existing = await db.query.staffAssignmentsTable.findFirst({
 		where: eq(staffAssignmentsTable.position, position)
 	});
