@@ -4,6 +4,7 @@
 	import IconPencil from '~icons/mdi/pencil';
 	import IconClose from '~icons/mdi/close';
 	import IconPlus from '~icons/mdi/plus';
+	import IconEmail from '~icons/mdi/email-outline';
 
 	let { data, form } = $props();
 
@@ -61,6 +62,46 @@
 	</form>
 {/snippet}
 
+{#snippet emailSection(key: string, name: string, emails: string[])}
+	{#if editing}
+		<form
+			method="POST"
+			action="?/saveEmails"
+			use:enhance
+			class="flex gap-2 border-t border-slate-700/60 px-4 py-3"
+		>
+			<input type="hidden" name="key" value={key} />
+			<label for="emails-{key}" class="sr-only">Emails for {name}</label>
+			<input
+				id="emails-{key}"
+				type="text"
+				name="emails"
+				value={emails.join(', ')}
+				placeholder="Emails, separated by commas"
+				class="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-1.5 text-sm text-white placeholder-gray-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none"
+			/>
+			<button
+				type="submit"
+				class="rounded-lg bg-sky-600 px-3 text-sm font-medium text-white transition-colors hover:bg-sky-700"
+			>
+				Save
+			</button>
+		</form>
+	{:else if emails.length > 0}
+		<div class="flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-700/60 px-4 py-3 text-sm">
+			{#each emails as email (email)}
+				<a
+					href="mailto:{email}"
+					class="inline-flex min-w-0 items-center gap-1.5 text-sky-400 transition-colors hover:text-sky-300"
+				>
+					<IconEmail class="h-4 w-4 shrink-0" />
+					<span class="truncate">{email}</span>
+				</a>
+			{/each}
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet addButton(title: string)}
 	<button
 		type="submit"
@@ -96,8 +137,8 @@
 {#if editing}
 	<p class="mb-4 text-sm text-gray-400">
 		Positions follow VATUSA facility roles until edited here. Editing a position replaces its VATUSA
-		holders; reset it to follow VATUSA again. Team leads for the Events Coordinator and Facility
-		Engineer are always set here, and a lead is left off their team list.
+		holders; reset it to follow VATUSA again. Team leads (EC, FE and WM) are always set here, and a
+		lead is left off their team list.
 	</p>
 {/if}
 
@@ -227,6 +268,7 @@
 					{/if}
 				</div>
 			{/if}
+			{@render emailSection(position.key, position.title, position.emails)}
 		</div>
 	{/each}
 </div>
@@ -277,6 +319,7 @@
 					{@render addButton(`Add to ${team.name}`)}
 				</form>
 			{/if}
+			{@render emailSection(team.key, team.name, team.emails)}
 		</div>
 	{/each}
 </div>

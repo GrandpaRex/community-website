@@ -3,13 +3,19 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { FACILITY_ID } from '$lib/config';
 import { STAFF_POSITIONS, STAFF_TEAMS, isManualOnlyPosition } from '$lib/config/staff';
-import { staffAssignmentsTable, staffBiosTable, staffTeamMembersTable } from '$lib/db/schema/staff';
+import {
+	staffAssignmentsTable,
+	staffBiosTable,
+	staffEmailsTable,
+	staffTeamMembersTable
+} from '$lib/db/schema/staff';
 import type { Database } from '$lib/server/db';
 import { logger } from '$lib/server/logger';
 import { isAdmin } from '$lib/utils/permissions';
 
 const POSITION_KEYS = STAFF_POSITIONS.map((position) => position.key) as [string, ...string[]];
 const TEAM_KEYS = STAFF_TEAMS.map((team) => team.key) as [string, ...string[]];
+const CARD_KEYS = [...POSITION_KEYS, ...TEAM_KEYS] as [string, ...string[]];
 const MAX_BIO_LENGTH = 1000;
 
 type RosterMember = Awaited<ReturnType<typeof getRoster>>[number];
@@ -37,12 +43,15 @@ function getVatusaHolders(roster: RosterMember[], role: string) {
 const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
 
 export const load = async ({ locals }) => {
-	const [roster, assignments, teamRows, bios] = await Promise.all([
+	const [roster, assignments, teamRows, bios, emailRows] = await Promise.all([
 		getRoster(locals.db),
 		locals.db.query.staffAssignmentsTable.findMany(),
 		locals.db.query.staffTeamMembersTable.findMany(),
-		locals.db.query.staffBiosTable.findMany()
+		locals.db.query.staffBiosTable.findMany(),
+		locals.db.query.staffEmailsTable.findMany()
 	]);
+
+	const getEmails = (key: string) => emailRows.find((row) => row.key === key)?.emails ?? [];
 
 	const offRosterCids = [...assignments, ...teamRows]
 		.map((row) => row.cid)
@@ -87,6 +96,7 @@ export const load = async ({ locals }) => {
 		...position,
 		manualOnly: isManualOnlyPosition(position.key),
 		isManual: assignments.some((a) => a.position === position.key),
+		emails: getEmails(position.key),
 		members: getPositionHolders(position.key).map(describe).sort(byName)
 	}));
 
@@ -102,6 +112,7 @@ export const load = async ({ locals }) => {
 
 		return {
 			...team,
+			emails: getEmails(team.key),
 			leads: leads.map(describe).sort(byName),
 			members: [...cids].map(describe).sort(byName)
 		};
@@ -131,6 +142,21 @@ const positionSchema = z.object({
 const teamMemberSchema = z.object({
 	team: z.enum(TEAM_KEYS),
 	cid: cidSchema
+});
+
+const emailsSchema = z.object({
+	key: z.enum(CARD_KEYS),
+	emails: z
+		.string()
+		.transform((value) => [
+			...new Set(
+				value
+					.split(',')
+					.map((email) => email.trim())
+					.filter(Boolean)
+			)
+		])
+		.pipe(z.array(z.email()).max(10))
 });
 
 const bioSchema = z.object({
@@ -257,5 +283,26 @@ export const actions = {
 		}
 
 		logger.info(`User ${locals.user?.id} updated the staff bio for ${cid}`);
+	},
+
+	saveEmails: async ({ request, locals }) => {
+		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
+
+		const parsed = await parseForm(request, emailsSchema);
+		if (!parsed.success) {
+			return fail(400, { message: 'Enter up to 10 valid email addresses, separated by commas' });
+		}
+		const { key, emails } = parsed.data;
+
+		if (emails.length) {
+			await locals.db
+				.insert(staffEmailsTable)
+				.values({ key, emails })
+				.onConflictDoUpdate({ target: staffEmailsTable.key, set: { emails } });
+		} else {
+			await locals.db.delete(staffEmailsTable).where(eq(staffEmailsTable.key, key));
+		}
+
+		logger.info(`User ${locals.user?.id} updated the staff emails for ${key}`);
 	}
 };

@@ -57,6 +57,13 @@
       "when": 1790347763231,
       "tag": "0007_staff_teams_and_bios",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1790348267078,
+      "tag": "0008_staff_emails",
+      "breakpoints": true
     }
   ]
 }

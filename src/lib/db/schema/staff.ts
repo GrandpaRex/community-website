@@ -28,3 +28,9 @@ export const staffBiosTable = sqliteTable('staff_bios', {
 	cid: text('cid').primaryKey(),
 	bio: text('bio').notNull()
 });
+
+// Contact emails for a staff position or team card, keyed by position or team key
+export const staffEmailsTable = sqliteTable('staff_emails', {
+	key: text('key').primaryKey(),
+	emails: text('emails', { mode: 'json' }).$type<string[]>().notNull()
+});

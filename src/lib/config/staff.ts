@@ -25,7 +25,7 @@ export const STAFF_POSITIONS: StaffPosition[] = [
 export const STAFF_TEAMS: StaffTeam[] = [
 	{ key: 'events', name: 'Events Team', lead: 'EC', vatusaRole: 'EC' },
 	{ key: 'fwg', name: 'Facility Working Group', lead: 'FE', vatusaRole: 'FE' },
-	{ key: 'tech', name: 'Tech Team', lead: 'WM' }
+	{ key: 'tech', name: 'Tech Team', lead: 'WM', vatusaRole: 'WM' }
 ];
 
 // When a team is built from a position's VATUSA role, that role can't identify the
