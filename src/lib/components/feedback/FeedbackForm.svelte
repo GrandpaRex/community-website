@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { superForm } from 'sveltekit-superforms';
+	import { page } from '$app/state';
+	import { replaceState } from '$app/navigation';
 	import ControllerSearch from './ControllerSearch.svelte';
 
 	import type { SuperValidated, Infer } from 'sveltekit-superforms';
@@ -15,6 +17,14 @@
 	} = $props();
 
 	const { form, errors, enhance, constraints, message } = superForm(data);
+
+	// Keep the URL in sync as /feedback/<cid> so the link for the selected controller can be copied
+	$effect(() => {
+		const cid = controllers.find((c) => c.id === $form.controllerId)?.cid;
+		if (cid && page.url.pathname !== `/feedback/${cid}`) {
+			replaceState(`/feedback/${cid}`, page.state);
+		}
+	});
 </script>
 
 <form method="POST" use:enhance class="w-full max-w-5xl">
