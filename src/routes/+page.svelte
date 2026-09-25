@@ -40,10 +40,11 @@
 			<DynamicMembershipButton user={data.user} class="shadow-lg" />
 		</div>
 	</PageHero>
-	<FeedbackTicker feedback={data.feedback} />
 	<!-- Main Content Section -->
 	<div class="w-full bg-gray-900 py-4">
 		<div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
+			<FeedbackTicker feedback={data.feedback} />
+
 			<!-- Events Section - Full Width -->
 			{#if data.events.length > 0}
 				<Panel title="Upcoming Events" icon={IconCalendar}>

@@ -47,7 +47,7 @@
 
 {#if feedback.length > 0}
 	<section
-		class="ticker relative flex w-full items-center overflow-hidden border-y border-slate-700/60 bg-slate-800/80"
+		class="ticker relative flex w-full items-center overflow-hidden rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm"
 		aria-label="Recent pilot feedback"
 	>
 		<a
