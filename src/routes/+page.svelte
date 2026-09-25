@@ -2,6 +2,7 @@
 	import EventGridCard from '$lib/components/events/EventGridCard.svelte';
 	import WeatherPanel from '$lib/components/status/WeatherPanel.svelte';
 	import ControllersPanel from '$lib/components/status/ControllersPanel.svelte';
+	import FeedbackTicker from '$lib/components/feedback/FeedbackTicker.svelte';
 	import Panel from '$lib/components/Panel.svelte';
 	import PageHero from '$lib/components/PageHero.svelte';
 	import DynamicMembershipButton from '$lib/components/DynamicMembershipButton.svelte';
@@ -39,6 +40,7 @@
 			<DynamicMembershipButton user={data.user} class="shadow-lg" />
 		</div>
 	</PageHero>
+	<FeedbackTicker feedback={data.feedback} />
 	<!-- Main Content Section -->
 	<div class="w-full bg-gray-900 py-4">
 		<div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4">
