@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { usersTable, type User } from '$lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
+import { logger } from './logger';
 
 export enum DiscordChannel {
 	TECH_TEAM_ALERTS,
@@ -38,15 +39,32 @@ function getDisplayName(user: User) {
 export async function sendDiscordEmbed(channel: DiscordChannel, embed: DiscordEmbed) {
 	const webhookUrl = DISCORD_CHANNELS[channel];
 
-	await fetch(webhookUrl, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json'
-		},
-		body: JSON.stringify({
-			embeds: [embed]
-		})
-	});
+	// Discord alerts are best-effort: a missing webhook or a Discord outage
+	// must never fail the request that triggered the alert
+	if (!webhookUrl) {
+		logger.warn(`Discord webhook for ${DiscordChannel[channel]} is not configured, skipping`);
+		return;
+	}
+
+	try {
+		const response = await fetch(webhookUrl, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				embeds: [embed]
+			})
+		});
+
+		if (!response.ok) {
+			logger.error(
+				`Discord webhook for ${DiscordChannel[channel]} failed: ${response.status} ${await response.text()}`
+			);
+		}
+	} catch (error) {
+		logger.error(`Discord webhook for ${DiscordChannel[channel]} failed`, error);
+	}
 }
 
 export async function notifyDiscordOfFeedbackStatusChange(
