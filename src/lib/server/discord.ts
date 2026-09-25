@@ -9,10 +9,16 @@ export enum DiscordChannel {
 	SENIOR_STAFF_ALERTS
 }
 
-const DISCORD_CHANNELS = {
-	[DiscordChannel.TECH_TEAM_ALERTS]: env.DISCORD_WEBHOOK_TECH_TEAM_ALERTS,
-	[DiscordChannel.SENIOR_STAFF_ALERTS]: env.DISCORD_WEBHOOK_SENIOR_STAFF_ALERTS
-};
+// Read at call time, not module load: the cron worker loads this module before
+// its env is set, so a module-level lookup would capture undefined.
+function getWebhookUrl(channel: DiscordChannel) {
+	switch (channel) {
+		case DiscordChannel.TECH_TEAM_ALERTS:
+			return env.DISCORD_WEBHOOK_TECH_TEAM_ALERTS;
+		case DiscordChannel.SENIOR_STAFF_ALERTS:
+			return env.DISCORD_WEBHOOK_SENIOR_STAFF_ALERTS;
+	}
+}
 
 export type DiscordEmbed = {
 	title: string | null;
@@ -36,7 +42,7 @@ function getDisplayName(user: User) {
 }
 
 export async function sendDiscordEmbed(channel: DiscordChannel, embed: DiscordEmbed) {
-	const webhookUrl = DISCORD_CHANNELS[channel];
+	const webhookUrl = getWebhookUrl(channel);
 
 	await fetch(webhookUrl, {
 		method: 'POST',
