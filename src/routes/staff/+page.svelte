@@ -1,14 +1,29 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import IconPencil from '~icons/mdi/pencil';
 	import IconClose from '~icons/mdi/close';
 	import IconPlus from '~icons/mdi/plus';
 
-	let { data } = $props();
+	let { data, form } = $props();
 
 	let editing = $state(false);
+	// `${position}-${cid}` of the bio being edited
+	let editingBio = $state<string | null>(null);
 
-	const teams = $derived(data.staff.filter((position) => position.team));
+	const selectClass =
+		'min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none';
+
+	function notIn(members: { cid: string }[]) {
+		return (controller: { cid: string }) => !members.some((m) => m.cid === controller.cid);
+	}
+
+	const closeBioOnSave: SubmitFunction = () => {
+		return async ({ result, update }) => {
+			if (result.type === 'success') editingBio = null;
+			await update();
+		};
+	};
 </script>
 
 <svelte:head>
@@ -31,6 +46,31 @@
 	{/if}
 {/snippet}
 
+{#snippet removeButton(action: string, fields: Record<string, string>, name: string)}
+	<form method="POST" {action} use:enhance class="ml-auto">
+		{#each Object.entries(fields) as [key, value]}
+			<input type="hidden" name={key} {value} />
+		{/each}
+		<button
+			type="submit"
+			title="Remove {name}"
+			class="rounded p-1 text-gray-400 transition-colors hover:bg-red-600/20 hover:text-red-400"
+		>
+			<IconClose class="h-4 w-4" />
+		</button>
+	</form>
+{/snippet}
+
+{#snippet addButton(title: string)}
+	<button
+		type="submit"
+		{title}
+		class="rounded-lg bg-sky-600 px-3 text-white transition-colors hover:bg-sky-700"
+	>
+		<IconPlus class="h-4 w-4" />
+	</button>
+{/snippet}
+
 <div class="mb-8 flex items-start justify-between gap-3">
 	<div>
 		<h1 class="text-3xl font-bold text-white">Facility Staff</h1>
@@ -39,7 +79,10 @@
 	{#if data.canEdit}
 		<button
 			type="button"
-			onclick={() => (editing = !editing)}
+			onclick={() => {
+				editing = !editing;
+				editingBio = null;
+			}}
 			class="inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white shadow-lg transition-all focus:ring-2 focus:ring-sky-500 focus:outline-none {editing
 				? 'bg-sky-600 hover:bg-sky-700'
 				: 'border border-slate-600 bg-slate-700 hover:bg-slate-600'}"
@@ -53,13 +96,22 @@
 {#if editing}
 	<p class="mb-4 text-sm text-gray-400">
 		Positions follow VATUSA facility roles until edited here. Editing a position replaces its VATUSA
-		holders; reset it to follow VATUSA again. Team leads are always set here, and a lead is left off
-		their team list.
+		holders; reset it to follow VATUSA again. Team leads for the Events Coordinator and Facility
+		Engineer are always set here, and a lead is left off their team list.
 	</p>
+{/if}
+
+{#if form?.message}
+	<div
+		class="mb-4 rounded-lg border border-red-500/40 bg-red-600/10 px-4 py-3 text-sm text-red-300"
+	>
+		{form.message}
+	</div>
 {/if}
 
 <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 	{#each data.staff as position (position.key)}
+		{@const team = data.teams.find((t) => t.lead === position.key)}
 		<div class="rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm backdrop-blur-sm">
 			<div class="flex items-center justify-between border-b border-slate-700/60 px-4 py-3">
 				<h2 class="text-sm font-semibold tracking-wide text-white uppercase">{position.title}</h2>
@@ -67,22 +119,63 @@
 					{position.key}
 				</span>
 			</div>
-			<div class="space-y-3 px-4 py-4">
+			<div class="space-y-4 px-4 py-4">
 				{#each position.members as member (member.cid)}
-					<div class="flex items-center gap-2">
-						{@render memberRow(member)}
-						{#if editing}
-							<form method="POST" action="?/remove" use:enhance class="ml-auto">
-								<input type="hidden" name="position" value={position.key} />
+					{@const bioKey = `${position.key}-${member.cid}`}
+					<div>
+						<div class="flex items-center gap-2">
+							{@render memberRow(member)}
+							{#if editing}
+								{@render removeButton(
+									'?/remove',
+									{ position: position.key, cid: member.cid },
+									member.name
+								)}
+							{/if}
+						</div>
+						{#if editingBio === bioKey}
+							<form method="POST" action="?/saveBio" use:enhance={closeBioOnSave} class="mt-2">
 								<input type="hidden" name="cid" value={member.cid} />
-								<button
-									type="submit"
-									title="Remove {member.name}"
-									class="rounded p-1 text-gray-400 transition-colors hover:bg-red-600/20 hover:text-red-400"
+								<label for="bio-{bioKey}" class="sr-only">Bio for {member.name}</label>
+								<textarea
+									id="bio-{bioKey}"
+									name="bio"
+									rows="4"
+									maxlength="1000"
+									class="w-full rounded-lg border border-slate-600 bg-slate-700 px-3 py-2 text-sm text-white placeholder-gray-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none"
+									placeholder="A few words about {member.name}…">{member.bio ?? ''}</textarea
 								>
-									<IconClose class="h-4 w-4" />
-								</button>
+								<div class="mt-2 flex justify-end gap-2 text-sm">
+									<button
+										type="button"
+										onclick={() => (editingBio = null)}
+										class="rounded-lg px-3 py-1.5 text-gray-300 hover:bg-slate-700"
+									>
+										Cancel
+									</button>
+									<button
+										type="submit"
+										class="rounded-lg bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-700"
+									>
+										Save bio
+									</button>
+								</div>
 							</form>
+						{:else}
+							{#if member.bio}
+								<p class="mt-2 text-sm leading-relaxed whitespace-pre-line text-gray-300">
+									{member.bio}
+								</p>
+							{/if}
+							{#if editing}
+								<button
+									type="button"
+									onclick={() => (editingBio = bioKey)}
+									class="mt-1 text-xs font-medium text-sky-400 hover:text-sky-300"
+								>
+									{member.bio ? 'Edit bio' : 'Add bio'}
+								</button>
+							{/if}
 						{/if}
 					</div>
 				{:else}
@@ -90,28 +183,21 @@
 				{/each}
 			</div>
 			{#if editing}
-				{@const available = data.controllers.filter(
-					(c) => !position.members.some((m) => m.cid === c.cid)
-				)}
+				{@const available = data.controllers.filter(notIn(position.members))}
 				<div class="space-y-2 border-t border-slate-700/60 px-4 py-3">
 					<form method="POST" action="?/add" use:enhance class="flex gap-2">
 						<input type="hidden" name="position" value={position.key} />
 						<label for="add-{position.key}" class="sr-only">Add to {position.title}</label>
-						<select
-							id="add-{position.key}"
-							name="cid"
-							required
-							class="min-w-0 flex-1 rounded-lg border border-slate-600 bg-slate-700 px-3 py-1.5 text-sm text-white focus:border-sky-500 focus:ring-2 focus:ring-sky-500 focus:outline-none"
-						>
-							{#if position.team}
+						<select id="add-{position.key}" name="cid" required class={selectClass}>
+							{#if position.manualOnly && team}
 								<option value="">Set lead…</option>
-								<optgroup label={position.team}>
-									{#each position.teamMembers as member (member.cid)}
+								<optgroup label={team.name}>
+									{#each team.members as member (member.cid)}
 										<option value={member.cid}>{member.name} ({member.cid})</option>
 									{/each}
 								</optgroup>
 								<optgroup label="All controllers">
-									{#each available.filter((c) => !position.teamMembers.some((m) => m.cid === c.cid)) as controller (controller.cid)}
+									{#each available.filter(notIn(team.members)) as controller (controller.cid)}
 										<option value={controller.cid}>{controller.name} ({controller.cid})</option>
 									{/each}
 								</optgroup>
@@ -122,15 +208,9 @@
 								{/each}
 							{/if}
 						</select>
-						<button
-							type="submit"
-							title="Add to {position.title}"
-							class="rounded-lg bg-sky-600 px-3 text-white transition-colors hover:bg-sky-700"
-						>
-							<IconPlus class="h-4 w-4" />
-						</button>
+						{@render addButton(`Add to ${position.title}`)}
 					</form>
-					{#if !position.team}
+					{#if !position.manualOnly}
 						<div class="flex items-center justify-between text-xs">
 							<span class="text-gray-500">
 								{position.isManual ? 'Manually set' : 'From VATUSA roles'}
@@ -151,29 +231,52 @@
 	{/each}
 </div>
 
-{#if teams.length > 0}
-	<h2 class="mt-10 mb-4 text-2xl font-bold text-white">Teams</h2>
-	<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-		{#each teams as position (position.key)}
-			<div class="rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm backdrop-blur-sm">
-				<div class="border-b border-slate-700/60 px-4 py-3">
-					<h3 class="text-sm font-semibold tracking-wide text-white uppercase">{position.team}</h3>
-					{#if position.members.length > 0}
-						<p class="mt-1 text-xs text-gray-400">
-							Led by {position.members.map((m) => m.name).join(', ')}
-						</p>
-					{/if}
-				</div>
-				<div class="grid grid-cols-1 gap-3 px-4 py-4 sm:grid-cols-2">
-					{#each position.teamMembers as member (member.cid)}
-						<div class="flex items-center gap-2">
-							{@render memberRow(member)}
-						</div>
-					{:else}
-						<p class="text-sm text-gray-500 italic">No team members</p>
-					{/each}
-				</div>
+<h2 class="mt-10 mb-4 text-2xl font-bold text-white">Teams</h2>
+<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+	{#each data.teams as team (team.key)}
+		<div class="rounded-lg border border-slate-700/60 bg-slate-800/60 shadow-sm backdrop-blur-sm">
+			<div class="border-b border-slate-700/60 px-4 py-3">
+				<h3 class="text-sm font-semibold tracking-wide text-white uppercase">{team.name}</h3>
+				{#if team.leads.length > 0}
+					<p class="mt-1 text-xs text-gray-400">
+						Led by {team.leads.map((m) => m.name).join(', ')}
+					</p>
+				{/if}
 			</div>
-		{/each}
-	</div>
-{/if}
+			<div class="space-y-3 px-4 py-4">
+				{#each team.members as member (member.cid)}
+					<div class="flex items-center gap-2">
+						{@render memberRow(member)}
+						{#if editing}
+							{@render removeButton(
+								'?/removeTeamMember',
+								{ team: team.key, cid: member.cid },
+								member.name
+							)}
+						{/if}
+					</div>
+				{:else}
+					<p class="text-sm text-gray-500 italic">No team members</p>
+				{/each}
+			</div>
+			{#if editing}
+				<form
+					method="POST"
+					action="?/addTeamMember"
+					use:enhance
+					class="flex gap-2 border-t border-slate-700/60 px-4 py-3"
+				>
+					<input type="hidden" name="team" value={team.key} />
+					<label for="add-team-{team.key}" class="sr-only">Add to {team.name}</label>
+					<select id="add-team-{team.key}" name="cid" required class={selectClass}>
+						<option value="">Add team member…</option>
+						{#each data.controllers.filter(notIn( [...team.members, ...team.leads] )) as controller (controller.cid)}
+							<option value={controller.cid}>{controller.name} ({controller.cid})</option>
+						{/each}
+					</select>
+					{@render addButton(`Add to ${team.name}`)}
+				</form>
+			{/if}
+		</div>
+	{/each}
+</div>

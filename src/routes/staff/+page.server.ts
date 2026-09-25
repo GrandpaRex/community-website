@@ -2,17 +2,15 @@ import { fail } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { FACILITY_ID } from '$lib/config';
-import { STAFF_POSITIONS } from '$lib/config/staff';
-import { staffAssignmentsTable } from '$lib/db/schema/staff';
+import { STAFF_POSITIONS, STAFF_TEAMS, isManualOnlyPosition } from '$lib/config/staff';
+import { staffAssignmentsTable, staffBiosTable, staffTeamMembersTable } from '$lib/db/schema/staff';
 import type { Database } from '$lib/server/db';
 import { logger } from '$lib/server/logger';
 import { isAdmin } from '$lib/utils/permissions';
 
 const POSITION_KEYS = STAFF_POSITIONS.map((position) => position.key) as [string, ...string[]];
-
-function hasTeam(position: string) {
-	return STAFF_POSITIONS.some((p) => p.key === position && p.team);
-}
+const TEAM_KEYS = STAFF_TEAMS.map((team) => team.key) as [string, ...string[]];
+const MAX_BIO_LENGTH = 1000;
 
 type RosterMember = Awaited<ReturnType<typeof getRoster>>[number];
 
@@ -27,39 +25,45 @@ function getDisplayName(member: RosterMember) {
 	);
 }
 
-// CIDs holding a position according to VATUSA facility roles
-function getVatusaHolders(roster: RosterMember[], position: string) {
+// CIDs holding a role according to VATUSA facility roles
+function getVatusaHolders(roster: RosterMember[], role: string) {
 	return roster
 		.filter((member) =>
-			member.data.roles?.some((role) => role.facility === FACILITY_ID && role.role === position)
+			member.data.roles?.some((r) => r.facility === FACILITY_ID && r.role === role)
 		)
 		.map((member) => member.cid);
 }
 
+const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+
 export const load = async ({ locals }) => {
-	const [roster, assignments] = await Promise.all([
+	const [roster, assignments, teamRows, bios] = await Promise.all([
 		getRoster(locals.db),
-		locals.db.query.staffAssignmentsTable.findMany()
+		locals.db.query.staffAssignmentsTable.findMany(),
+		locals.db.query.staffTeamMembersTable.findMany(),
+		locals.db.query.staffBiosTable.findMany()
 	]);
 
-	const assignedCids = assignments
-		.map((assignment) => assignment.cid)
+	const offRosterCids = [...assignments, ...teamRows]
+		.map((row) => row.cid)
 		.filter((cid) => !roster.some((member) => member.cid === cid));
-	// Manually assigned staff who aren't on the roster fall back to their site account
-	const offRosterUsers = assignedCids.length
+	// Manually added staff who aren't on the roster fall back to their site account
+	const offRosterUsers = offRosterCids.length
 		? await locals.db.query.usersTable.findMany({
-				where: (users, { inArray }) => inArray(users.cid, assignedCids)
+				where: (users, { inArray }) => inArray(users.cid, offRosterCids)
 			})
 		: [];
 
 	function describe(cid: string) {
 		const member = roster.find((m) => m.cid === cid);
+		const bio = bios.find((b) => b.cid === cid)?.bio ?? null;
 		if (member) {
 			return {
 				cid,
 				name: getDisplayName(member),
 				rating: member.data.rating_short,
-				operatingInitials: member.user?.operatingInitials ?? null
+				operatingInitials: member.user?.operatingInitials ?? null,
+				bio
 			};
 		}
 
@@ -68,61 +72,76 @@ export const load = async ({ locals }) => {
 			cid,
 			name: user ? (user.preferredName ?? `${user.firstName} ${user.lastName}`) : cid,
 			rating: null,
-			operatingInitials: user?.operatingInitials ?? null
+			operatingInitials: user?.operatingInitials ?? null,
+			bio
 		};
 	}
 
-	const staff = STAFF_POSITIONS.map((position) => {
-		const manual = assignments.filter((a) => a.position === position.key).map((a) => a.cid);
-		const vatusaHolders = getVatusaHolders(roster, position.key);
-		const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+	function getPositionHolders(position: string) {
+		const manual = assignments.filter((a) => a.position === position).map((a) => a.cid);
+		if (isManualOnlyPosition(position) || manual.length > 0) return manual;
+		return getVatusaHolders(roster, position);
+	}
 
-		if (hasTeam(position.key)) {
-			// Leads are only ever set manually; every other role holder is on the team
-			return {
-				...position,
-				isManual: true,
-				members: manual.map(describe).sort(byName),
-				teamMembers: vatusaHolders
-					.filter((cid) => !manual.includes(cid))
-					.map(describe)
-					.sort(byName)
-			};
-		}
+	const staff = STAFF_POSITIONS.map((position) => ({
+		...position,
+		manualOnly: isManualOnlyPosition(position.key),
+		isManual: assignments.some((a) => a.position === position.key),
+		members: getPositionHolders(position.key).map(describe).sort(byName)
+	}));
 
-		const isManual = manual.length > 0;
+	const teams = STAFF_TEAMS.map((team) => {
+		const rows = teamRows.filter((row) => row.team === team.key);
+		const leads = getPositionHolders(team.lead);
+		const cids = new Set([
+			...(team.vatusaRole ? getVatusaHolders(roster, team.vatusaRole) : []),
+			...rows.filter((row) => !row.excluded).map((row) => row.cid)
+		]);
+		for (const row of rows) if (row.excluded) cids.delete(row.cid);
+		for (const cid of leads) cids.delete(cid);
+
 		return {
-			...position,
-			isManual,
-			members: (isManual ? manual : vatusaHolders).map(describe).sort(byName),
-			teamMembers: []
+			...team,
+			leads: leads.map(describe).sort(byName),
+			members: [...cids].map(describe).sort(byName)
 		};
 	});
 
 	return {
 		staff,
+		teams,
 		canEdit: isAdmin(locals.roles),
 		controllers: isAdmin(locals.roles)
-			? roster
-					.map((member) => ({ cid: member.cid, name: getDisplayName(member) }))
-					.sort((a, b) => a.name.localeCompare(b.name))
+			? roster.map((member) => ({ cid: member.cid, name: getDisplayName(member) })).sort(byName)
 			: []
 	};
 };
 
+const cidSchema = z.string().regex(/^\d+$/);
+
 const assignmentSchema = z.object({
 	position: z.enum(POSITION_KEYS),
-	cid: z.string().regex(/^\d+$/)
+	cid: cidSchema
 });
 
 const positionSchema = z.object({
 	position: z.enum(POSITION_KEYS)
 });
 
+const teamMemberSchema = z.object({
+	team: z.enum(TEAM_KEYS),
+	cid: cidSchema
+});
+
+const bioSchema = z.object({
+	cid: cidSchema,
+	bio: z.string().trim().max(MAX_BIO_LENGTH)
+});
+
 // The first manual edit to a position starts from what VATUSA currently shows.
-// Team positions don't need this, since their leads are always set manually.
+// Manual-only positions don't need this, since they never come from VATUSA.
 async function seedFromVatusa(db: Database, position: string) {
-	if (hasTeam(position)) return;
+	if (isManualOnlyPosition(position)) return;
 
 	const existing = await db.query.staffAssignmentsTable.findFirst({
 		where: eq(staffAssignmentsTable.position, position)
@@ -135,11 +154,15 @@ async function seedFromVatusa(db: Database, position: string) {
 	}
 }
 
+async function parseForm<T extends z.ZodType>(request: Request, schema: T) {
+	return schema.safeParse(Object.fromEntries(await request.formData()));
+}
+
 export const actions = {
 	add: async ({ request, locals }) => {
 		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
 
-		const parsed = assignmentSchema.safeParse(Object.fromEntries(await request.formData()));
+		const parsed = await parseForm(request, assignmentSchema);
 		if (!parsed.success) return fail(400, { message: 'Invalid staff assignment' });
 		const { position, cid } = parsed.data;
 
@@ -152,7 +175,7 @@ export const actions = {
 	remove: async ({ request, locals }) => {
 		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
 
-		const parsed = assignmentSchema.safeParse(Object.fromEntries(await request.formData()));
+		const parsed = await parseForm(request, assignmentSchema);
 		if (!parsed.success) return fail(400, { message: 'Invalid staff assignment' });
 		const { position, cid } = parsed.data;
 
@@ -167,7 +190,7 @@ export const actions = {
 	reset: async ({ request, locals }) => {
 		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
 
-		const parsed = positionSchema.safeParse(Object.fromEntries(await request.formData()));
+		const parsed = await parseForm(request, positionSchema);
 		if (!parsed.success) return fail(400, { message: 'Invalid staff position' });
 		const { position } = parsed.data;
 
@@ -176,5 +199,63 @@ export const actions = {
 			.where(eq(staffAssignmentsTable.position, position));
 
 		logger.info(`User ${locals.user?.id} reset staff position ${position} to VATUSA roles`);
+	},
+
+	addTeamMember: async ({ request, locals }) => {
+		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
+
+		const parsed = await parseForm(request, teamMemberSchema);
+		if (!parsed.success) return fail(400, { message: 'Invalid team member' });
+		const { team, cid } = parsed.data;
+
+		await locals.db
+			.insert(staffTeamMembersTable)
+			.values({ team, cid, excluded: false })
+			.onConflictDoUpdate({
+				target: [staffTeamMembersTable.team, staffTeamMembersTable.cid],
+				set: { excluded: false }
+			});
+
+		logger.info(`User ${locals.user?.id} added ${cid} to staff team ${team}`);
+	},
+
+	removeTeamMember: async ({ request, locals }) => {
+		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
+
+		const parsed = await parseForm(request, teamMemberSchema);
+		if (!parsed.success) return fail(400, { message: 'Invalid team member' });
+		const { team, cid } = parsed.data;
+
+		// Kept as an exclusion so VATUSA role holders stay off the team too
+		await locals.db
+			.insert(staffTeamMembersTable)
+			.values({ team, cid, excluded: true })
+			.onConflictDoUpdate({
+				target: [staffTeamMembersTable.team, staffTeamMembersTable.cid],
+				set: { excluded: true }
+			});
+
+		logger.info(`User ${locals.user?.id} removed ${cid} from staff team ${team}`);
+	},
+
+	saveBio: async ({ request, locals }) => {
+		if (!isAdmin(locals.roles)) return fail(403, { message: 'Unauthorized' });
+
+		const parsed = await parseForm(request, bioSchema);
+		if (!parsed.success) {
+			return fail(400, { message: `Bios must be ${MAX_BIO_LENGTH} characters or fewer` });
+		}
+		const { cid, bio } = parsed.data;
+
+		if (bio) {
+			await locals.db
+				.insert(staffBiosTable)
+				.values({ cid, bio })
+				.onConflictDoUpdate({ target: staffBiosTable.cid, set: { bio } });
+		} else {
+			await locals.db.delete(staffBiosTable).where(eq(staffBiosTable.cid, cid));
+		}
+
+		logger.info(`User ${locals.user?.id} updated the staff bio for ${cid}`);
 	}
 };
