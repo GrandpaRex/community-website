@@ -142,8 +142,9 @@ export async function notifyDiscordOfFeedback(db: Database, feedback: Feedback) 
 	}
 }
 
-// Only positive feedback is shared publicly
-const ANNOUNCED_RATINGS = ['good', 'excellent'];
+// Only positive feedback is shared publicly. Excluding the negative ratings (rather
+// than listing the positive ones) means new positive ratings are picked up automatically.
+const UNANNOUNCED_RATINGS = ['poor', 'fair'];
 
 /**
  * Shares approved feedback in the community announcements channel, in the same format
@@ -153,7 +154,7 @@ const ANNOUNCED_RATINGS = ['good', 'excellent'];
  * Never throws, so a Discord problem can't fail the approval.
  */
 export async function announceApprovedFeedback(db: Database, feedback: Feedback) {
-	if (feedback.status !== 'approved' || !ANNOUNCED_RATINGS.includes(feedback.rating)) {
+	if (feedback.status !== 'approved' || UNANNOUNCED_RATINGS.includes(feedback.rating)) {
 		return;
 	}
 
@@ -184,7 +185,8 @@ export async function announceApprovedFeedback(db: Database, feedback: Feedback)
 		const fields = [
 			{ name: 'Controller', value: controllerName, inline: true },
 			{ name: 'Position', value: feedback.position, inline: true },
-			{ name: 'Rating', value: feedback.rating, inline: true }
+			// "very_good" -> "very good"
+			{ name: 'Rating', value: feedback.rating.replaceAll('_', ' '), inline: true }
 		];
 
 		const comments = feedback.feedback?.trim();
