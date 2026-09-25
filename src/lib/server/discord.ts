@@ -3,6 +3,7 @@ import { env } from '$env/dynamic/private';
 import { usersTable, type User } from '$lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
+import { logger } from '$lib/server/logger';
 
 export enum DiscordChannel {
 	TECH_TEAM_ALERTS,
@@ -138,5 +139,79 @@ export async function notifyDiscordOfFeedback(db: Database, feedback: Feedback) 
 		};
 
 		await sendDiscordEmbed(DiscordChannel.SENIOR_STAFF_ALERTS, embed);
+	}
+}
+
+// Only positive feedback is shared publicly
+const ANNOUNCED_RATINGS = ['good', 'excellent'];
+
+/**
+ * Shares approved feedback in the community announcements channel, in the same format
+ * the old website used. Unlike the staff alerts, this is public: no submitter, reviewer,
+ * CID, or feedback ID.
+ *
+ * Never throws, so a Discord problem can't fail the approval.
+ */
+export async function announceApprovedFeedback(db: Database, feedback: Feedback) {
+	if (feedback.status !== 'approved' || !ANNOUNCED_RATINGS.includes(feedback.rating)) {
+		return;
+	}
+
+	const webhookUrl = env.DISCORD_WEBHOOK_COMMUNITY_ANNOUNCEMENTS;
+	if (!webhookUrl) {
+		logger.warn(
+			'DISCORD_WEBHOOK_COMMUNITY_ANNOUNCEMENTS is not set, skipping feedback announcement'
+		);
+		return;
+	}
+
+	try {
+		const controller = await db.query.usersTable.findFirst({
+			where: eq(usersTable.id, feedback.controllerId)
+		});
+
+		if (!controller) {
+			logger.warn(`Controller ${feedback.controllerId} not found, skipping feedback announcement`);
+			return;
+		}
+
+		// Matches the old website's post: "Braden Kearney (BK)"
+		const name = controller.preferredName || `${controller.firstName} ${controller.lastName}`;
+		const controllerName = controller.operatingInitials
+			? `${name} (${controller.operatingInitials})`
+			: name;
+
+		const fields = [
+			{ name: 'Controller', value: controllerName, inline: true },
+			{ name: 'Position', value: feedback.position, inline: true },
+			{ name: 'Rating', value: feedback.rating, inline: true }
+		];
+
+		const comments = feedback.feedback?.trim();
+		if (comments) {
+			// Discord caps embed field values at 1024 characters
+			fields.push({
+				name: 'Comments',
+				value: comments.length > 1024 ? `${comments.slice(0, 1023)}…` : comments,
+				inline: false
+			});
+		}
+
+		const response = await fetch(webhookUrl, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				content: 'New feedback received!',
+				embeds: [{ color: 0x2ecc71, fields }]
+			})
+		});
+
+		if (!response.ok) {
+			logger.error(`Feedback announcement failed: ${response.status} ${await response.text()}`);
+		}
+	} catch (error) {
+		logger.error('Feedback announcement failed', error);
 	}
 }

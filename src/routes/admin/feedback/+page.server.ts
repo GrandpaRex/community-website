@@ -1,5 +1,5 @@
 import { feedbackTable } from '$lib/db/schema/feedback';
-import { notifyDiscordOfFeedbackStatusChange } from '$lib/server/discord';
+import { announceApprovedFeedback, notifyDiscordOfFeedbackStatusChange } from '$lib/server/discord';
 import { isAdmin } from '$lib/utils/permissions';
 import { redirect, fail } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
@@ -57,6 +57,7 @@ export const actions = {
 				.where(eq(feedbackTable.id, feedbackId))
 				.returning();
 
+			await announceApprovedFeedback(locals.db, feedback);
 			await notifyDiscordOfFeedbackStatusChange(locals.db, feedback, locals.user);
 			logger.info(`Feedback ${feedbackId} approved by admin ${locals.user?.id}`);
 			return { success: true };
