@@ -62,7 +62,7 @@
 	</form>
 {/snippet}
 
-{#snippet emailSection(key: string, name: string, emails: string[])}
+{#snippet emailForm(key: string, name: string, emails: string[])}
 	{#if editing}
 		<form
 			method="POST"
@@ -87,8 +87,12 @@
 				Save
 			</button>
 		</form>
-	{:else if emails.length > 0}
-		<div class="flex flex-wrap gap-x-4 gap-y-1 border-t border-slate-700/60 px-4 py-3 text-sm">
+	{/if}
+{/snippet}
+
+{#snippet emailLinks(emails: string[])}
+	{#if !editing && emails.length > 0}
+		<div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
 			{#each emails as email (email)}
 				<a
 					href="mailto:{email}"
@@ -174,6 +178,7 @@
 								)}
 							{/if}
 						</div>
+						{@render emailLinks(position.emails)}
 						{#if editingBio === bioKey}
 							<form method="POST" action="?/saveBio" use:enhance={closeBioOnSave} class="mt-2">
 								<input type="hidden" name="cid" value={member.cid} />
@@ -268,7 +273,7 @@
 					{/if}
 				</div>
 			{/if}
-			{@render emailSection(position.key, position.title, position.emails)}
+			{@render emailForm(position.key, position.title, position.emails)}
 		</div>
 	{/each}
 </div>
@@ -284,6 +289,7 @@
 						Led by {team.leads.map((m) => m.name).join(', ')}
 					</p>
 				{/if}
+				{@render emailLinks(team.emails)}
 			</div>
 			<div class="space-y-3 px-4 py-4">
 				{#each team.members as member (member.cid)}
@@ -319,7 +325,7 @@
 					{@render addButton(`Add to ${team.name}`)}
 				</form>
 			{/if}
-			{@render emailSection(team.key, team.name, team.emails)}
+			{@render emailForm(team.key, team.name, team.emails)}
 		</div>
 	{/each}
 </div>
