@@ -3,7 +3,7 @@ import { env } from '$env/dynamic/private';
 import { usersTable, type User } from '$lib/db/schema/users';
 import { eq } from 'drizzle-orm';
 import type { Database } from '$lib/server/db';
-import { logger } from '$lib/server/logger';
+import { logger } from './logger';
 
 export enum DiscordChannel {
 	TECH_TEAM_ALERTS,
